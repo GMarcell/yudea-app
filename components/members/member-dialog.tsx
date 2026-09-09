@@ -1,5 +1,11 @@
 "use client";
 
+import {
+  useDistricts,
+  useProvinces,
+  useRegencies,
+  useVillages,
+} from "@/hooks/use-indonesia-region";
 import { useRegions } from "@/hooks/use-region";
 import { useFamilies } from "@/hooks/use-family";
 import { useCreateMember, useUpdateMember } from "@/hooks/use-member";
@@ -52,6 +58,156 @@ import {
   SelectValue,
 } from "../ui/select";
 import { Switch } from "../ui/switch";
+
+type MemberAddressRegion = {
+  memberProvinsi: string;
+  memberKotaKabupaten: string;
+  memberKecamatan: string;
+  memberKelurahan: string;
+};
+
+function IndonesiaMemberRegionSelects({
+  values,
+  onChange,
+}: {
+  values: MemberAddressRegion;
+  onChange: (field: keyof MemberAddressRegion, value: string) => void;
+}) {
+  const { data: provinces, isLoading: provincesLoading, isError: provincesError } = useProvinces();
+  const [provinceCode, setProvinceCode] = useState("");
+  const [regencyCode, setRegencyCode] = useState("");
+  const [districtCode, setDistrictCode] = useState("");
+  const [villageCode, setVillageCode] = useState("");
+
+  const selectedProvinceCode =
+    provinceCode || provinces?.find((item) => item.name === values.memberProvinsi)?.code || "";
+  const { data: regencies, isLoading: regenciesLoading, isError: regenciesError } =
+    useRegencies(selectedProvinceCode || null);
+  const selectedRegencyCode =
+    regencyCode || regencies?.find((item) => item.name === values.memberKotaKabupaten)?.code || "";
+  const { data: districts, isLoading: districtsLoading, isError: districtsError } =
+    useDistricts(selectedRegencyCode || null);
+  const selectedDistrictCode =
+    districtCode || districts?.find((item) => item.name === values.memberKecamatan)?.code || "";
+  const { data: villages, isLoading: villagesLoading, isError: villagesError } =
+    useVillages(selectedDistrictCode || null);
+  const selectedVillageCode =
+    villageCode || villages?.find((item) => item.name === values.memberKelurahan)?.code || "";
+
+  const selectClassName = "w-full";
+
+  return (
+    <>
+      <div className="space-y-2">
+        <Label htmlFor="memberProvinsi">Provinsi</Label>
+        <Select
+          value={selectedProvinceCode}
+          onValueChange={(code) => {
+            setProvinceCode(code);
+            setRegencyCode("");
+            setDistrictCode("");
+            setVillageCode("");
+            onChange("memberProvinsi", provinces?.find((item) => item.code === code)?.name ?? "");
+            onChange("memberKotaKabupaten", "");
+            onChange("memberKecamatan", "");
+            onChange("memberKelurahan", "");
+          }}
+          disabled={provincesLoading}
+        >
+          <SelectTrigger id="memberProvinsi" className={selectClassName}>
+            <SelectValue placeholder={provincesLoading ? "Memuat…" : "Pilih Provinsi"} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {provinces?.map((item) => (
+                <SelectItem key={item.code} value={item.code}>{item.name}</SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        {provincesError && <p className="text-xs text-destructive">Gagal memuat data provinsi.</p>}
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="memberKotaKabupaten">Kota/Kabupaten</Label>
+        <Select
+          value={selectedRegencyCode}
+          onValueChange={(code) => {
+            setRegencyCode(code);
+            setDistrictCode("");
+            setVillageCode("");
+            onChange("memberKotaKabupaten", regencies?.find((item) => item.code === code)?.name ?? "");
+            onChange("memberKecamatan", "");
+            onChange("memberKelurahan", "");
+          }}
+          disabled={!selectedProvinceCode || regenciesLoading}
+        >
+          <SelectTrigger id="memberKotaKabupaten" className={selectClassName}>
+            <SelectValue placeholder={regenciesLoading ? "Memuat…" : selectedProvinceCode ? "Pilih Kota/Kabupaten" : "Pilih Provinsi dulu"} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {regencies?.map((item) => (
+                <SelectItem key={item.code} value={item.code}>{item.name}</SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        {regenciesError && <p className="text-xs text-destructive">Gagal memuat data kota/kabupaten.</p>}
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="memberKecamatan">Kecamatan</Label>
+        <Select
+          value={selectedDistrictCode}
+          onValueChange={(code) => {
+            setDistrictCode(code);
+            setVillageCode("");
+            onChange("memberKecamatan", districts?.find((item) => item.code === code)?.name ?? "");
+            onChange("memberKelurahan", "");
+          }}
+          disabled={!selectedRegencyCode || districtsLoading}
+        >
+          <SelectTrigger id="memberKecamatan" className={selectClassName}>
+            <SelectValue placeholder={districtsLoading ? "Memuat…" : selectedRegencyCode ? "Pilih Kecamatan" : "Pilih Kota/Kabupaten dulu"} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {districts?.map((item) => (
+                <SelectItem key={item.code} value={item.code}>{item.name}</SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        {districtsError && <p className="text-xs text-destructive">Gagal memuat data kecamatan.</p>}
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="memberKelurahan">Kelurahan/Desa</Label>
+        <Select
+          value={selectedVillageCode}
+          onValueChange={(code) => {
+            setVillageCode(code);
+            onChange("memberKelurahan", villages?.find((item) => item.code === code)?.name ?? "");
+          }}
+          disabled={!selectedDistrictCode || villagesLoading}
+        >
+          <SelectTrigger id="memberKelurahan" className={selectClassName}>
+            <SelectValue placeholder={villagesLoading ? "Memuat…" : selectedDistrictCode ? "Pilih Kelurahan/Desa" : "Pilih Kecamatan dulu"} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {villages?.map((item) => (
+                <SelectItem key={item.code} value={item.code}>{item.name}</SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        {villagesError && <p className="text-xs text-destructive">Gagal memuat data kelurahan/desa.</p>}
+      </div>
+    </>
+  );
+}
 
 export default function MemberDialog({
   editing,
@@ -190,6 +346,15 @@ export default function MemberDialog({
   const selectedBaptis = useWatch({ control, name: "statusBaptis" });
   const selectedSidi = useWatch({ control, name: "statusSidi" });
   const selectedPerkawinan = useWatch({ control, name: "statusPerkawinan" });
+  const memberRegionValues = useWatch({
+    control,
+    name: [
+      "memberProvinsi",
+      "memberKotaKabupaten",
+      "memberKecamatan",
+      "memberKelurahan",
+    ],
+  });
 
   async function onSubmit(values: MemberForm) {
     try {
@@ -557,27 +722,16 @@ export default function MemberDialog({
                     placeholder="e.g. Jl. Merdeka No. 123, RT 01/RW 02"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="memberKotaKabupaten">Kota/Kabupaten</Label>
-                  <Input
-                    id="memberKotaKabupaten"
-                    {...register("memberKotaKabupaten")}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="memberKecamatan">Kecamatan</Label>
-                  <Input
-                    id="memberKecamatan"
-                    {...register("memberKecamatan")}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="memberKelurahan">Kelurahan</Label>
-                  <Input
-                    id="memberKelurahan"
-                    {...register("memberKelurahan")}
-                  />
-                </div>
+                <IndonesiaMemberRegionSelects
+                  key={`${editing?.id ?? "new"}-${open ? "open" : "closed"}`}
+                  values={{
+                    memberProvinsi: memberRegionValues[0] ?? "",
+                    memberKotaKabupaten: memberRegionValues[1] ?? "",
+                    memberKecamatan: memberRegionValues[2] ?? "",
+                    memberKelurahan: memberRegionValues[3] ?? "",
+                  }}
+                  onChange={(field, value) => setValue(field, value)}
+                />
               </div>
             )}
           </div>
