@@ -27,6 +27,10 @@ export async function GET() {
       session.role === "COORDINATOR" && session.regionId
         ? { id: session.regionId }
         : {};
+    const branchWhere =
+      session.role === "COORDINATOR" && session.regionId
+        ? { regions: { some: { id: session.regionId } } }
+        : {};
 
     const [
       totalMembers,
@@ -44,7 +48,7 @@ export async function GET() {
       prisma.member.count({ where: memberWhere }),
       prisma.family.count({ where: familyWhere }),
       prisma.region.count({ where: regionWhere }),
-      prisma.branch.count(),
+      prisma.branch.count({ where: branchWhere }),
       prisma.member.count({ where: { ...memberWhere, gender: Gender.FEMALE } }),
       prisma.member.count({ where: { ...memberWhere, gender: Gender.MALE } }),
       prisma.member.count({ where: { ...memberWhere, bloodType: BloodType.A } }),

@@ -37,6 +37,23 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           return null;
         }
 
+        // Emergency access is rare and highly privileged. Leave a server-side
+        // trace and record the use so `break-glass.ts status` can show it.
+        // A failure here must not block the sign-in an operator is relying on.
+        if (user.isBreakGlass) {
+          console.warn(
+            `[auth] BREAK-GLASS ADMIN SIGN-IN: ${user.email} at ${new Date().toISOString()}`,
+          );
+          try {
+            await prisma.user.update({
+              where: { id: user.id },
+              data: { breakGlassLastUsedAt: new Date() },
+            });
+          } catch (error) {
+            console.error("[auth] failed to record break-glass sign-in", error);
+          }
+        }
+
         return {
           id: user.id,
           email: user.email,

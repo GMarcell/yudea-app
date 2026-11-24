@@ -30,6 +30,13 @@ export async function GET(
 
   try {
     const { id } = await params;
+
+    // Coordinators may only read their own region; return 404 for any other
+    // id so the response does not reveal whether that region exists.
+    if (authResult.user.role === "COORDINATOR" && authResult.user.regionId !== id) {
+      return NextResponse.json({ error: "Region not found" }, { status: 404 });
+    }
+
     const region = await findOneOrThrow(id);
 
     if (!region) {

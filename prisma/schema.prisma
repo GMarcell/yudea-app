@@ -24,6 +24,13 @@ model User {
   sessions Session[]
   accounts Account[]
 
+  // Emergency admin account managed only by scripts/break-glass.ts. The user
+  // API hides it from the account list and refuses to edit or delete it, so a
+  // stolen admin session cannot demote it and an operator cannot remove the
+  // last way back into the app by accident.
+  isBreakGlass          Boolean   @default(false)
+  breakGlassLastUsedAt  DateTime?
+
   @@index([email])
   @@index([role])
   @@index([regionId])

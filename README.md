@@ -2,7 +2,7 @@
 
 > Church administration dashboard for managing branches, regions, families, members, Pelkat grouping, attendance, users, and role-based access control.
 
-**Stack:** Next.js 16 App Router · React 19 · TypeScript · Prisma 7 (PostgreSQL) · NextAuth v5 · TanStack Query v5 · shadcn/Radix UI · Tailwind CSS 4 · Vitest
+**Stack:** Next.js 16 App Router · React 19 · TypeScript · Prisma 5.22 (PostgreSQL) · NextAuth v5 · TanStack Query v5 · shadcn/Radix UI · Tailwind CSS 4 · Vitest
 
 ---
 
@@ -41,7 +41,7 @@
 ├─────────────────────────────────────────────┤
 │           NextAuth v5 (JWT Sessions)         │
 ├─────────────────────────────────────────────┤
-│               Prisma 7 + PostgreSQL          │
+│             Prisma 5.22 + PostgreSQL         │
 │  ┌──────┐ ┌──────┐ ┌──────┐ ┌────────────┐ │
 │  │ User │ │Family│ │Member│ │ Attendance │ │
 │  │Branch│ │Region│ │AppSet│ │ ...        │ │
@@ -97,6 +97,25 @@ Open `http://localhost:3000`.
 |-------|----------|------|
 | `admin@example.com` | `admin123` | `ADMIN` |
 | `demo@example.com` | `demo1234` | `STAFF` |
+
+### Break-glass admin (emergency access)
+
+A single emergency `ADMIN` account handles the case where every normal admin is locked out. It is
+not seeded, and its password is **not** in this repository by design — the script generates it
+and prints it once, and only a bcrypt hash is stored:
+
+- **Email:** `break-glass@yudea.local` (override at creation with `--email`)
+- **Password:** generated per creation; keep it in the church password manager
+
+```bash
+npx tsx scripts/break-glass.ts create   # create it, print the password once
+npx tsx scripts/break-glass.ts status   # address and last sign-in
+npx tsx scripts/break-glass.ts rotate   # replace the password
+```
+
+It is a normal credentials account (not an auth bypass), hidden from user management and
+immutable through `/api/user`, and each sign-in is logged. See
+[docs/AUTH_RBAC.md](docs/AUTH_RBAC.md#break-glass-admin).
 
 ---
 
@@ -245,7 +264,7 @@ nav/
 services/                     # (Deprecated - use hooks instead)
 └── member.ts                 # Removed - functionality in hooks/use-member.ts
 
-tests/                        # Vitest test files (21 files, 398 tests)
+tests/                        # Vitest test files (22 files, 407 tests)
 ├── utils.test.ts             # cn() utility
 ├── helper.test.ts            # Server helpers (pelkat, pagination, parsePagination)
 ├── client-helper.test.ts     # Client formatting helpers
@@ -271,8 +290,11 @@ tests/                        # Vitest test files (21 files, 398 tests)
 e2e/                          # Playwright end-to-end tests (real login + real DB)
 ├── helpers.ts                # Shared login helper, seeded credentials, sort-header helpers
 ├── full-app.spec.ts          # Smoke: auth, dashboard counts, pages, coordinator RBAC
+├── authz-api.spec.ts         # Server-side guards: 401, coordinator scoping, 403s, duplicate 409s
 ├── dialogs.spec.ts           # Family/member dialog CRUD flows (APIs mocked)
-└── sort.spec.ts              # Sortable headers: URL persistence, toggle, reload
+├── sort.spec.ts              # Sortable headers: URL persistence, toggle, reload
+├── exports.spec.ts           # XLSX/PDF downloads: real files parsed and validated
+└── user-admin.spec.ts        # Last-admin protection + password policy
 ```
 
 ---
@@ -609,9 +631,13 @@ Route `/dashboard/settings` is hardcoded as admin-only — even persisted overri
 
 ### Coordinator Scoping
 
-When a user has `role === "COORDINATOR"` and a `regionId` set on their account:
-- Family, member, and region API queries are automatically scoped to their region
+A `COORDINATOR` must have a `regionId`; without one, guarded API requests return `403` instead of falling back to unscoped data.
+
+When a `regionId` is set:
+- Family, member, region, birthday, dashboard, region-count, and report API queries are scoped to their region
+- Single-record reads (`/api/member/:id`, `/api/family/:id`, `/api/region/:id`) return `404` for another region's records
 - **Writes are scoped too:** creating a member requires a family in their region, and updating/deleting members, families, or changing family status/splitting is rejected (403) when the target family is outside their region
+- The region is captured in the JWT, so reassignment requires a new login
 - Birthday queries filter to their region's members
 - Dashboard counts, gender/blood-type/pelkat breakdowns, and the region table only reflect their region
 
@@ -921,7 +947,7 @@ Dynamic cascading select data sourced from `idn-area-data`:
 
 - **Framework:** Vitest 4
 - **Environment:** jsdom (for component/hook tests)
-- **Total tests:** 398 across 21 test files
+- **Total tests:** 407 across 22 test files
 
 ### Running Tests
 
@@ -991,9 +1017,13 @@ npx tsx prisma/seed.ts --reset
 npm run test:e2e          # or: npx playwright test
 ```
 
-The `full-app` and `sort` specs are **read-only** against the database and can be
-re-run against the same seed. The `dialogs` spec mocks most API routes (list
-responses and CRUD writes) but still needs the seeded admin for its real login.
+The `full-app`, `authz-api`, and `sort` specs are **read-only** against the
+database and can be re-run against the same seed. The `dialogs` spec mocks most
+API routes (list responses and CRUD writes) but still needs the seeded admin for
+its real login.
+
+For the maintainer's guide — coverage, writing tests, CI notes, and
+troubleshooting — see [docs/E2E_TESTING.md](docs/E2E_TESTING.md).
 
 Teardown:
 
@@ -1006,8 +1036,11 @@ docker rm -f yudea-e2e-pg
 | Spec | Coverage |
 |------|----------|
 | `e2e/full-app.spec.ts` | Auth redirect, admin dashboard counts, master-data pages, coordinator region-scoping + sidebar RBAC; also clicks a sortable header on every sortable page (real DB, read-only) |
+| `e2e/authz-api.spec.ts` | Direct API calls: unauthenticated `401`, wrong-password login, coordinator list/single-record scoping (`404`/`403`), denied attendance/user routes, duplicate attendance and user-email `409`s (real DB, read-only) |
 | `e2e/dialogs.spec.ts` | Family/member create–update–delete dialog flows, form validation, province cascade (APIs mocked) |
 | `e2e/sort.spec.ts` | Full sort-header verification on every table: URL persistence, asc/desc toggle, reload restore (real DB, read-only, uses shared `verifySortableHeader` helper) |
+| `e2e/exports.spec.ts` | Captures real XLSX/PDF downloads, parses the workbook (sheet name, headers, row count) and validates the PDF header/trailer; all four XLSX exporters and the report PDF (real DB, read-only) |
+| `e2e/user-admin.spec.ts` | Last-admin protection (demotion blocked, one-of-two allowed, self-delete refused; probe user cleaned up) and the six-character password policy in the user dialog (writes mocked) |
 
 ---
 
@@ -1088,7 +1121,14 @@ The `AUTH_SECRET` environment variable is available as a fallback for `NEXTAUTH_
 
 ## Useful Links
 
+- [Quick Start](docs/QUICK_START.md) — one-page orientation for new church staff
+- [Project Documentation](docs/PROJECT_DOCUMENTATION.md) — architecture, setup, testing, operations
+- [Product Requirements (PRD)](docs/PRD.md) — features, scope, requirements, roadmap
+- [User Manual](docs/USER_MANUAL.md) — guide for dashboard users
 - [API Reference](docs/API.md)
 - [Data Model](docs/DATA_MODEL.md)
 - [Authentication & RBAC](docs/AUTH_RBAC.md)
+- [End-to-End Testing](docs/E2E_TESTING.md) — Playwright setup, coverage, conventions
+- [Backup & Restore Runbook](docs/BACKUP_RESTORE.md) — dumps, restore, verification, rehearsals
+- [Security Policy](SECURITY.md) — PII handling, secrets, vulnerability reporting
 - [AGENTS.md](AGENTS.md) — Next.js 16 specific conventions

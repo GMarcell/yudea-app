@@ -11,7 +11,12 @@ export async function GET() {
   if (authResult.error) return authResult.error;
 
   try {
-    const all = await prisma.family.count();
+    const all = await prisma.family.count({
+      where:
+        authResult.user.role === "COORDINATOR" && authResult.user.regionId
+          ? { regionId: authResult.user.regionId }
+          : {},
+    });
 
     return NextResponse.json({ all });
   } catch (error) {

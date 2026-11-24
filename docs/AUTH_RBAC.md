@@ -47,8 +47,8 @@ app/api/auth/[...nextauth]/route.ts   NextAuth route handlers
 | `getSessionUser()` | `{ id, email?, name?, role, regionId? } \| null` | Calls `auth()`, returns parsed user with normalized role |
 | `requireAuth()` | `{ user, error }` | Returns `401 Unauthorized` response if no session |
 | `requireAdmin()` | `{ user, error }` | Returns `403 Forbidden` if role is not `ADMIN` |
-| `requireEditAccess(pathname)` | `{ user, error }` | Returns `403 Forbidden` if the user's role is not in the route's persisted `edit` list |
-| `requireViewAccess(pathname)` | `{ user, error }` | Returns `403 Forbidden` if the user's role is not in the route's persisted `view` list |
+| `requireEditAccess(pathname)` | `{ user, error }` | Returns `403 Forbidden` if the user's role is not in the route's persisted `edit` list, or if a `COORDINATOR` has no region |
+| `requireViewAccess(pathname)` | `{ user, error }` | Returns `403 Forbidden` if the user's role is not in the route's persisted `view` list, or if a `COORDINATOR` has no region |
 
 Used in API routes:
 - `/api/user` (user CRUD) — `requireAdmin()`
@@ -134,15 +134,55 @@ Dispatched events are picked up by `subscribeToAuthSession` which listens for bo
 
 ### Coordinator Scoping
 
-When a user has `role === "COORDINATOR"` and `regionId` set on their User record:
+A coordinator **must** have `regionId` set on their User record. If it is missing,
+`requireViewAccess()` and `requireEditAccess()` return `403` with
+`"Coordinator account is not assigned to a region"`; no region filter is allowed to fall
+away silently.
 
-- **Family queries** (`/api/family`): `where.regionId` is scoped
-- **Member queries** (`/api/member`): `where.family.regionId` is scoped
-- **Region queries** (`/api/region/member-count`): raw SQL `WHERE r.id = regionId`
-- **Birthday queries** (`/api/birthday`): raw SQL `AND r.id = regionId`
-- **Dashboard region table**: Only shows the coordinator's region
+When `regionId` is present:
 
-The `regionId` on the User model links a coordinator to their sector.
+- **Family list** (`/api/family`): `where.regionId` is scoped.
+- **Member list and presbyters** (`/api/member`, `/api/member/presbyter`):
+  `where.family.regionId` is scoped.
+- **Single records** (`/api/family/:id`, `/api/member/:id`, `/api/region/:id`): the region
+  is part of the query and an out-of-region id returns `404`.
+- **Region list** (`/api/region`) and **region counts** (`/api/region/member-count`): only
+  the coordinator's region is returned.
+- **Birthday** (`/api/birthday`), **dashboard counts** (`/api/dashboard/counts`), and
+  **report** (`/api/report`, when Report view is granted): scoped to the region.
+- **Writes**: creating, updating, moving, deleting, splitting, or changing status outside
+  the region returns `403`.
+
+The `regionId` on the User model links a coordinator to their sector. It is copied into
+the JWT at sign-in, so changing the assignment requires the coordinator to sign out and
+back in.
+
+---
+
+## Break-glass Admin
+
+One emergency `ADMIN` account exists for the case where every normal admin has lost access.
+It is a normal credentials account with a strong generated password — not a bypass around
+`authorize()` or the RBAC guards — and it is managed only from the server shell:
+
+```bash
+npx tsx scripts/break-glass.ts create   # create it, print the password once
+npx tsx scripts/break-glass.ts rotate   # replace the password
+npx tsx scripts/break-glass.ts status   # address and last sign-in
+```
+
+The script needs `DATABASE_URL`; run it on the server or a trusted admin machine, never expose
+it as an HTTP endpoint.
+
+- Identified by `User.isBreakGlass`; the script refuses to create a second one.
+- Hidden from `GET /api/user`, and `PATCH`/`DELETE /api/user/:id` return `403` for it, so a
+  stolen `ADMIN` session cannot demote, repassword, or delete the account.
+- Default address is `break-glass@yudea.local`; override with `--email`.
+- Each sign-in writes `User.breakGlassLastUsedAt` and logs
+  `[auth] BREAK-GLASS ADMIN SIGN-IN: <email> <timestamp>` to the server log.
+- The password is shown once and is bcrypt-hashed at rest. Store it in the church password
+  manager. Rotating it does **not** end existing sessions; if it may have leaked, also rotate
+  `NEXTAUTH_SECRET`.
 
 ---
 

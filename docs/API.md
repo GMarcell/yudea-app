@@ -32,7 +32,11 @@ All paginated list endpoints return:
 | --- | --- | --- |
 | `/api/auth/[...nextauth]` | NextAuth handlers | Credentials login, JWT session callbacks, sign-in/sign-out |
 
-Protected API handlers call `requireAuth()` or `requireAdmin()` from `lib/server-auth.ts`.
+Protected API handlers call `requireAuth()` / `requireAdmin()`, or the route-aware `requireViewAccess()` / `requireEditAccess()` from `lib/server-auth.ts`.
+
+### Coordinator scoping
+
+A `COORDINATOR` must have a `regionId`. If the account has none, every guarded endpoint returns `403` with `"Coordinator account is not assigned to a region"`. With a region set, list/aggregate endpoints are filtered to it, and single-record endpoints return `404` for another region's id. The region is captured in the JWT at sign-in, so assignment changes require a new login.
 
 ## Dashboard
 
@@ -83,6 +87,8 @@ Create fields:
 
 `GET /api/region/member-count` returns `{ data: Array<{ regionId, regionName, memberCount }> }`. Scoped by coordinator's `regionId` when user role is `COORDINATOR`.
 
+`GET /api/region/:id` is also scoped: a coordinator requesting another region receives `404`.
+
 ## Families
 
 | Route | Method | Description | Auth |
@@ -93,12 +99,14 @@ Create fields:
 | `/api/family/:id` | `PATCH` | Update a family | Required |
 | `/api/family/:id` | `DELETE` | Delete a family | Required |
 | `/api/family/:id/status` | `PATCH` | Cascade `isActive` (and optional `tanggalPindah`) to all family members | Required |
-| `/api/family/count` | `GET` | Total family count | Required |
+| `/api/family/count` | `GET` | Total family count (scoped for coordinators) | Required |
 | `/api/family/split` | `POST` | Split a family — move members to a new family, promote one as FAMILY_HEAD | Required |
 
 ### GET /api/family
 
 Supports `sortBy` (values: `familyName`, `regionName`, `address`) and `sortOrder` (`asc` / `desc`). Scoped by coordinator's `regionId`.
+
+`GET /api/family/:id` returns `404` when the family is outside the coordinator's region.
 
 ### POST /api/family
 
@@ -152,6 +160,8 @@ Supports additional query params:
 Note: `pelkat` filtering and `pelkat` sorting happen in-memory because pelkat is a computed field.
 
 Scoped by coordinator's `regionId` when user role is `COORDINATOR`.
+
+`GET /api/member/:id` returns `404` when the member's family is outside the coordinator's region.
 
 ### GET /api/member/presbyter
 
@@ -212,6 +222,14 @@ Create fields:
 | `/api/user/:id` | `DELETE` | Delete a user | `ADMIN` |
 
 Roles are validated against `ADMIN`, `STAFF`, `COORDINATOR`, `MEMBER`. Returns user list without passwords.
+
+`POST` returns `409` when the email is already registered. `PATCH` refuses to demote the last
+remaining `ADMIN` and `DELETE` refuses to remove the last admin (`400`, `Cannot demote/delete the
+last admin`); an admin also cannot delete their own account.
+
+The break-glass admin is excluded from `GET /api/user`, and `PATCH`/`DELETE` on it return `403`.
+It is managed only with `scripts/break-glass.ts` — see
+[AUTH_RBAC.md](AUTH_RBAC.md#break-glass-admin).
 
 ## Birthday
 

@@ -18,9 +18,16 @@ export async function GET(
 
   try {
     const { id } = await params;
+    const coordinatorRegionId =
+      authResult.user.role === "COORDINATOR" ? authResult.user.regionId : undefined;
 
-    const member = await prisma.member.findUnique({
-      where: { id },
+    const member = await prisma.member.findFirst({
+      where: {
+        id,
+        ...(coordinatorRegionId && {
+          family: { regionId: coordinatorRegionId },
+        }),
+      },
       include: { family: true },
     });
 

@@ -21,14 +21,19 @@ export async function GET(req: NextRequest) {
     const sortOrder = searchParams.get("sortOrder")?.trim() === "asc" ? "asc" : "desc";
     const skip = (page - 1) * limit;
 
-    const where = search
-      ? {
-          OR: [
-            { name: { contains: search, mode: "insensitive" as const } },
-            { email: { contains: search, mode: "insensitive" as const } },
-          ],
-        }
-      : {};
+    // The break-glass admin is managed only by scripts/break-glass.ts, so it
+    // never appears in user management even for another ADMIN.
+    const where = {
+      isBreakGlass: false,
+      ...(search
+        ? {
+            OR: [
+              { name: { contains: search, mode: "insensitive" as const } },
+              { email: { contains: search, mode: "insensitive" as const } },
+            ],
+          }
+        : {}),
+    };
 
     const [items, total] = await prisma.$transaction([
       prisma.user.findMany({

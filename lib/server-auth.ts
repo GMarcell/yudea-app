@@ -27,6 +27,12 @@ export async function requireAuth() {
   return { user, error: null };
 }
 
+const unassignedCoordinatorError = () =>
+  NextResponse.json(
+    { error: "Coordinator account is not assigned to a region" },
+    { status: 403 },
+  );
+
 export async function requireAdmin() {
   const result = await requireAuth();
   if (result.error) return result;
@@ -48,7 +54,7 @@ export async function requireAdmin() {
  * This closes the gap where write endpoints relied only on the middleware's
  * authentication check: a view-only MEMBER role user could mutate records by
  * calling the API directly. Returns 403 when the user's role is not in the
- * route's `edit` list.
+ * route's `edit` list, or when a coordinator has no region to scope writes to.
  */
 export async function requireEditAccess(pathname: string) {
   const result = await requireAuth();
@@ -65,6 +71,12 @@ export async function requireEditAccess(pathname: string) {
     };
   }
 
+  // A coordinator without a region cannot be scoped. Deny instead of letting
+  // region filters silently fall away and expose every region's records.
+  if (result.user!.role === "COORDINATOR" && !result.user!.regionId) {
+    return { user: null, error: unassignedCoordinatorError() };
+  }
+
   return result;
 }
 
@@ -75,8 +87,9 @@ export async function requireEditAccess(pathname: string) {
  * Read endpoints previously checked only that a user was authenticated, so a
  * role with a restricted UI (e.g. MEMBER) could still fetch any resource by
  * calling the API directly. Returns 403 when the user's role is not in the
- * route's `view` list. The returned user carries `regionId`, so callers can
- * reuse it for coordinator region scoping instead of calling `auth()` again.
+ * route's `view` list, or when a coordinator has no region to scope reads to.
+ * The returned user carries `regionId`, so callers can reuse it for coordinator
+ * region scoping instead of calling `auth()` again.
  */
 export async function requireViewAccess(pathname: string) {
   const result = await requireAuth();
@@ -91,6 +104,12 @@ export async function requireViewAccess(pathname: string) {
       user: null,
       error: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
     };
+  }
+
+  // A coordinator without a region cannot be scoped. Deny instead of letting
+  // region filters silently fall away and expose every region's records.
+  if (result.user!.role === "COORDINATOR" && !result.user!.regionId) {
+    return { user: null, error: unassignedCoordinatorError() };
   }
 
   return result;

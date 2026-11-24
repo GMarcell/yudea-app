@@ -185,6 +185,17 @@ describe("server-auth", () => {
       expect(result.error).toBeNull();
     });
 
+    it("denies a COORDINATOR without a region", async () => {
+      mockAuth.mockResolvedValue({
+        user: { id: "user-6", role: "coordinator" },
+      } as MockSession);
+
+      const result = await requireEditAccess("/dashboard/families");
+      expect(result.user).toBeNull();
+      expect(result.error).toBeInstanceOf(NextResponse);
+      expect(result.error!.status).toBe(403);
+    });
+
     it("denies MEMBER writes on /dashboard/members (view-only role)", async () => {
       mockAuth.mockResolvedValue({
         user: { id: "user-3", role: "member" },
@@ -271,6 +282,17 @@ describe("server-auth", () => {
       const result = await requireViewAccess("/dashboard/families");
       expect(result.error).toBeNull();
       expect(result.user!.regionId).toBe("region-1");
+    });
+
+    it("denies a COORDINATOR without a region", async () => {
+      mockAuth.mockResolvedValue({
+        user: { id: "user-6", role: "coordinator" },
+      } as MockSession);
+
+      const result = await requireViewAccess("/dashboard/families");
+      expect(result.user).toBeNull();
+      expect(result.error).toBeInstanceOf(NextResponse);
+      expect(result.error!.status).toBe(403);
     });
 
     it("denies MEMBER reads on /dashboard/families (view list excludes MEMBER)", async () => {
